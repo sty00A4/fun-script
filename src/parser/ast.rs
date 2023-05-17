@@ -1,4 +1,7 @@
-use crate::location::position::Located;
+use crate::error::Error;
+use crate::location::position::{Located, Position};
+use crate::lexer::token::*;
+use super::parser::*;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ValueType {
@@ -64,29 +67,66 @@ pub struct Block {
 }
 
 #[derive(Debug, Clone, PartialEq)]
-pub enum ChunkTrigger {}
+pub enum Trigger {}
 
 // |TRIGGER| BLOCK
 #[derive(Debug, Clone, PartialEq)]
-pub struct Chunk {
-    trigger: ChunkTrigger,
+pub struct Event {
+    trigger: Trigger,
     body: Block
 }
 
 // (ID)
-// (ID = @EXPR)
-// <ID>
-// <ID = @COND>
+#[derive(Debug, Clone, PartialEq)]
+pub struct Message(String);
+impl Message {
+    pub fn new(label: String) -> Self {
+        Self(label)
+    }
+}
+impl Parsable for Message {
+    fn parse(parser: &mut Parser) -> Result<Located<Self>, crate::error::Error> {
+        let Located { item: _, mut pos } = parser.token_expect(Token::ExprIn)?;
+        let Located { item: token, pos: id_pos } = parser.token_check()?;
+        let Token::Word(id) = token else {
+            return Err(Error::new(format!("expected {}, got {}", Token::Word("".into()).name(), token.name()), parser.path.clone(), Some(id_pos)))
+        };
+        let Located { item: _, pos: end_pos } = parser.token_expect(Token::ExprOut)?;
+        pos.extend(&end_pos);
+        Ok(Located::new(Self::new(id), pos))
+    }
+}
+// (ID)
+// (ID = EXPR)
 #[derive(Debug, Clone, PartialEq)]
 pub struct Variable {
     id: Located<String>,
-    value: Option<Located<Expression>>
+    value: Option<Located<Expression>>,
+}
+impl Variable {
+    pub fn new(id: Located<String>, value: Option<Located<Expression>>) -> Self {
+        Self { id, value }
+    }
+}
+impl Parsable for Variable {
+    fn parse(parser: &mut Parser) -> Result<Located<Self>, crate::error::Error> {
+        let Located { item: _, mut pos } = parser.token_expect(Token::ExprIn)?;
+        let Located { item: token, pos: id_pos } = parser.token_check()?;
+        let Token::Word(id) = token else {
+            return Err(Error::new(format!("expected {}, got {}", Token::Word("".into()).name(), token.name()), parser.path.clone(), Some(id_pos)))
+        };
+        let mut value = None;
+        // if let Some(Located { item: Token::Equal, pos: _ }) = parser.token_ref() {
+        //     parser.token();
+        //     value = Some(Expression::parse(parser)?);
+        // }
+        let Located { item: _, pos: end_pos } = parser.token_expect(Token::ExprOut)?;
+        pos.extend(&end_pos);
+        Ok(Located::new(Self::new(Located::new(id, id_pos), value), pos))
+    }
 }
 
 // (ID)
-// <ID>
-// (ID = EXPR)
-// <ID = EXPR>
 #[derive(Debug, Clone, PartialEq)]
 pub struct Param {
     id: Located<String>,
@@ -117,11 +157,81 @@ pub struct Program {
     // variables { ... }
     variables: Vec<Located<Variable>>,
     // messages { ... }
-    messages: Vec<Located<String>>,
+    messages: Vec<Located<Message>>,
     // chunks { ... }
-    chunks: Vec<Located<Chunk>>,
+    events: Vec<Located<Event>>,
     // procedures { ... }
     procedures: Vec<Located<Procedure>>,
     // functions { ... }
     functions: Vec<Located<Function>>,
+}
+impl Program {
+    pub fn new() -> Self {
+        Self { variables: vec![], messages: vec![], events: vec![], procedures: vec![], functions: vec![] }
+    }
+}
+impl Parsable for Program {
+    fn parse(parser: &mut Parser) -> Result<Located<Self>, crate::error::Error> {
+        let mut program = Program::new();
+        let mut pos = Position::default();
+        while let Some(Located { item: token, pos: start_pos }) = parser.token() {
+            match token {
+                Token::Word(word) => match word.as_str() {
+                    "data" => {
+                        parser.token_expect(Token::BodyIn)?;
+                        while let Some(Located { item: token, pos: _ }) = parser.token_ref() {
+                            if token == &Token::BodyOut { break; }
+                            program.variables.push(Variable::parse(parser)?);
+                            parser.token_skip(Token::End);
+                        }
+                        let Located { item: _, pos: end_pos } = parser.token_expect(Token::BodyOut)?;
+                        pos.extend(&end_pos)
+                    }
+                    "messages" => {
+                        parser.token_expect(Token::BodyIn)?;
+                        while let Some(Located { item: token, pos: _ }) = parser.token_ref() {
+                            if token == &Token::BodyOut { break; }
+                            program.messages.push(Message::parse(parser)?);
+                            parser.token_skip(Token::End);
+                        }
+                        let Located { item: _, pos: end_pos } = parser.token_expect(Token::BodyOut)?;
+                        pos.extend(&end_pos)
+                    }
+                    // "procedures" => {
+                    //     parser.token_expect(Token::BodyIn)?;
+                    //     while let Some(Located { item: token, pos: _ }) = parser.token_ref() {
+                    //         if token == &Token::BodyOut { break; }
+                    //         program.procedures.push(Procedure::parse(parser)?);
+                    //         parser.token_skip(Token::End);
+                    //     }
+                    //     let Located { item: _, pos: end_pos } = parser.token_expect(Token::BodyOut)?;
+                    //     pos.extend(&end_pos)
+                    // }
+                    // "functions" => {
+                    //     parser.token_expect(Token::BodyIn)?;
+                    //     while let Some(Located { item: token, pos: _ }) = parser.token_ref() {
+                    //         if token == &Token::BodyOut { break; }
+                    //         program.functions.push(Function::parse(parser)?);
+                    //         parser.token_skip(Token::End);
+                    //     }
+                    //     let Located { item: _, pos: end_pos } = parser.token_expect(Token::BodyOut)?;
+                    //     pos.extend(&end_pos)
+                    // }
+                    // "events" => {
+                    //     parser.token_expect(Token::BodyIn)?;
+                    //     while let Some(Located { item: token, pos: _ }) = parser.token_ref() {
+                    //         if token == &Token::BodyOut { break; }
+                    //         program.events.push(Event::parse(parser)?);
+                    //         parser.token_skip(Token::End);
+                    //     }
+                    //     let Located { item: _, pos: end_pos } = parser.token_expect(Token::BodyOut)?;
+                    //     pos.extend(&end_pos)
+                    // }
+                    word => return Err(Error::new(format!("unexpected word {word:?}"), parser.path.clone(), Some(start_pos)))
+                }
+                token => return Err(Error::new(format!("unexpected {}", token.name()), parser.path.clone(), Some(start_pos)))
+            }
+        }
+        Ok(Located::new(program, pos))
+    }
 }

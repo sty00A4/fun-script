@@ -3,9 +3,9 @@ use crate::{location::{path::FilePath, position::Located}, lexer::token::Token, 
 pub mod parser;
 pub mod ast;
 
-use parser::Parser;
+use parser::{Parser, Parsable};
 use ast::Program;
 
-pub fn parse(path: &FilePath, tokens: Vec<Located<Token>>) -> Result<Program, Error> {
-    Parser::new(path.clone(), tokens).parse()
+pub fn parse(path: &FilePath, tokens: Vec<Located<Token>>) -> Result<Located<Program>, Error> {
+    Program::parse(&mut Parser::new(path.clone(), tokens))
 }

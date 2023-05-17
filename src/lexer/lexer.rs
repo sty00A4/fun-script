@@ -83,15 +83,15 @@ impl Lexer {
                     }
                 }
                 c if c.is_alphabetic() => {
-                    let mut id = String::from(c);
+                    let mut word = String::from(c);
                     self.advance();
                     while let Some(c) = self.get() {
-                        if !c.is_alphabetic() { break; }
-                        id.push(c);
+                        if !c.is_alphanumeric() && c != '_' { break; }
+                        word.push(c);
                         pos.extend(&self.pos());
                         self.advance();
                     }
-                    Ok(Some(Located::new(Token::from_id(id), pos)))
+                    Ok(Some(Located::new(Token::from_word(word), pos)))
                 }
                 _ => todo!("lex token, char {c:?}")
             }
